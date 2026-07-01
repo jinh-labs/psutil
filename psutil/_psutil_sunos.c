@@ -62,98 +62,107 @@ static PyMethodDef mod_methods[] = {
 };
 
 
-struct module_state {
-    PyObject *error;
-};
-
-
-static struct PyModuleDef moduledef = {
-    PyModuleDef_HEAD_INIT,
-    "psutil_sunos",
-    NULL,
-    -1,
-    mod_methods,
-    NULL,
-    NULL,
-    NULL,
-    NULL
-};
-
-
-PyObject *
-PyInit__psutil_sunos(void) {
-    PyObject *mod = PyModule_Create(&moduledef);
-    if (mod == NULL)
-        return NULL;
-
-#ifdef Py_GIL_DISABLED
-    if (PyUnstable_Module_SetGIL(mod, Py_MOD_GIL_NOT_USED))
-        return NULL;
-#endif
+static int
+_psutil_sunos_exec(PyObject *mod) {
+    // Record module name for per-interpreter exception lookup.
+    psutil_posix_set_module(mod);
 
     if (psutil_setup() != 0)
-        return NULL;
+        return -1;
     if (psutil_posix_add_constants(mod) != 0)
-        return NULL;
+        return -1;
     if (psutil_posix_add_methods(mod) != 0)
-        return NULL;
+        return -1;
 
     if (PyModule_AddIntConstant(mod, "version", PSUTIL_VERSION))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "SSLEEP", SSLEEP))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "SRUN", SRUN))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "SZOMB", SZOMB))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "SSTOP", SSTOP))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "SIDL", SIDL))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "SONPROC", SONPROC))
-        return NULL;
+        return -1;
 #ifdef SWAIT
     if (PyModule_AddIntConstant(mod, "SWAIT", SWAIT))
-        return NULL;
+        return -1;
 #else
     // sys/proc.h started defining SWAIT somewhere
     // after Update 3 and prior to Update 5 included.
     if (PyModule_AddIntConstant(mod, "SWAIT", 0))
-        return NULL;
+        return -1;
 #endif
     // for process tty
     if (PyModule_AddIntConstant(mod, "PRNODEV", PRNODEV))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_CLOSED", TCPS_CLOSED))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_CLOSING", TCPS_CLOSING))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_CLOSE_WAIT", TCPS_CLOSE_WAIT))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_LISTEN", TCPS_LISTEN))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_ESTABLISHED", TCPS_ESTABLISHED))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_SYN_SENT", TCPS_SYN_SENT))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_SYN_RCVD", TCPS_SYN_RCVD))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_FIN_WAIT_1", TCPS_FIN_WAIT_1))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_FIN_WAIT_2", TCPS_FIN_WAIT_2))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_LAST_ACK", TCPS_LAST_ACK))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "TCPS_TIME_WAIT", TCPS_TIME_WAIT))
-        return NULL;
+        return -1;
     // sunos specific
     if (PyModule_AddIntConstant(mod, "TCPS_IDLE", TCPS_IDLE))
-        return NULL;
+        return -1;
     // sunos specific
     if (PyModule_AddIntConstant(mod, "TCPS_BOUND", TCPS_BOUND))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "PSUTIL_CONN_NONE", PSUTIL_CONN_NONE))
-        return NULL;
+        return -1;
 
-    return mod;
+    return 0;
+}
+
+static PyModuleDef_Slot _psutil_sunos_slots[] = {
+    {Py_mod_exec, _psutil_sunos_exec},
+// Declare that the module does not rely on the GIL, for free-threaded
+// builds. This is the multi-phase-init replacement for the unstable
+// PyUnstable_Module_SetGIL() call; the slot only exists on 3.13+.
+#ifdef Py_mod_gil
+    {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+#endif
+// Declare support for being loaded in multiple (shared-GIL) sub-interpreters.
+// Only exposed on Python >= 3.12 APIs; the stable-ABI wheel omits it, but
+// CPython already defaults multi-phase modules to this value.
+#ifdef Py_mod_multiple_interpreters
+    {Py_mod_multiple_interpreters, Py_MOD_MULTIPLE_INTERPRETERS_SUPPORTED},
+#endif
+    {0, NULL}
+};
+
+static struct PyModuleDef moduledef = {
+    .m_base = PyModuleDef_HEAD_INIT,
+    .m_name = "_psutil_sunos",
+    .m_size = sizeof(struct module_state),
+    .m_methods = mod_methods,
+    .m_slots = _psutil_sunos_slots,
+    .m_traverse = psutil_posix_traverse,
+    .m_clear = psutil_posix_clear,
+    .m_free = psutil_posix_free,
+};
+
+PyMODINIT_FUNC
+PyInit__psutil_sunos(void) {
+    return PyModuleDef_Init(&moduledef);
 }

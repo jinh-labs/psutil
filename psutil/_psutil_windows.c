@@ -107,188 +107,226 @@ static PyMethodDef PsutilMethods[] = {
 };
 
 
+// Per-interpreter module state. The exception classes are kept here (rather
+// than as process-globals) so that each (sub)interpreter gets its own
+// TimeoutExpired / TimeoutAbandoned class object.
 struct module_state {
-    PyObject *error;
+    PyObject *TimeoutExpired;
+    PyObject *TimeoutAbandoned;
 };
 
 
 static int
 psutil_windows_traverse(PyObject *m, visitproc visit, void *arg) {
-    Py_VISIT(GETSTATE(m)->error);
+    Py_VISIT(GETSTATE(m)->TimeoutExpired);
+    Py_VISIT(GETSTATE(m)->TimeoutAbandoned);
     return 0;
 }
 
 static int
 psutil_windows_clear(PyObject *m) {
-    Py_CLEAR(GETSTATE(m)->error);
+    Py_CLEAR(GETSTATE(m)->TimeoutExpired);
+    Py_CLEAR(GETSTATE(m)->TimeoutAbandoned);
     return 0;
 }
 
-static struct PyModuleDef moduledef = {
-    PyModuleDef_HEAD_INIT,
-    "psutil_windows",
-    NULL,
-    sizeof(struct module_state),
-    PsutilMethods,
-    NULL,
-    psutil_windows_traverse,
-    psutil_windows_clear,
-    NULL
-};
+// m_free hook. The module is freed either by the cyclic GC (which calls
+// m_clear) or by plain reference counting (which calls m_free directly, with
+// no m_clear). m_free calls m_clear so the module-state references are
+// released either way.
+static void
+psutil_windows_free(void *m) {
+    psutil_windows_clear((PyObject *)m);
+}
 
+static int
+_psutil_windows_exec(PyObject *mod) {
+    struct module_state *st = GETSTATE(mod);
+    PyObject *exc;
 
-PyMODINIT_FUNC
-PyInit__psutil_windows(void) {
-    PyObject *mod = PyModule_Create(&moduledef);
-    if (mod == NULL)
-        return NULL;
-
-#ifdef Py_GIL_DISABLED
-    if (PyUnstable_Module_SetGIL(mod, Py_MOD_GIL_NOT_USED))
-        return NULL;
-#endif
+    // Record module name so raise helpers in arch/windows/*.c can resolve
+    // the current interpreter's module (see psutil_raise_windows_exc()).
+    psutil_windows_set_module(mod);
 
     if (psutil_setup() != 0)
-        return NULL;
+        return -1;
     if (psutil_setup_windows() != 0)
-        return NULL;
+        return -1;
     if (psutil_set_se_debug() != 0)
-        return NULL;
+        return -1;
 
-    // Exceptions
-    TimeoutExpired = PyErr_NewException(
-        "_psutil_windows.TimeoutExpired", NULL, NULL
-    );
-    if (TimeoutExpired == NULL)
-        return NULL;
-    if (PyModule_AddObject(mod, "TimeoutExpired", TimeoutExpired))
-        return NULL;
+    // Exceptions. Kept in per-interpreter module state and exposed as module
+    // attributes (an owned reference in each).
+    exc = PyErr_NewException("_psutil_windows.TimeoutExpired", NULL, NULL);
+    if (exc == NULL)
+        return -1;
+    Py_INCREF(exc);
+    st->TimeoutExpired = exc;
+    if (PyModule_AddObject(mod, "TimeoutExpired", exc) < 0) {
+        Py_DECREF(exc);
+        return -1;
+    }
 
-    TimeoutAbandoned = PyErr_NewException(
-        "_psutil_windows.TimeoutAbandoned", NULL, NULL
-    );
-    if (TimeoutAbandoned == NULL)
-        return NULL;
-    if (PyModule_AddObject(mod, "TimeoutAbandoned", TimeoutAbandoned))
-        return NULL;
+    exc = PyErr_NewException("_psutil_windows.TimeoutAbandoned", NULL, NULL);
+    if (exc == NULL)
+        return -1;
+    Py_INCREF(exc);
+    st->TimeoutAbandoned = exc;
+    if (PyModule_AddObject(mod, "TimeoutAbandoned", exc) < 0) {
+        Py_DECREF(exc);
+        return -1;
+    }
 
     // version constant
     if (PyModule_AddIntConstant(mod, "version", PSUTIL_VERSION))
-        return NULL;
+        return -1;
 
     // process status constants
     // http://msdn.microsoft.com/en-us/library/ms683211(v=vs.85).aspx
     if (PyModule_AddIntConstant(
             mod, "ABOVE_NORMAL_PRIORITY_CLASS", ABOVE_NORMAL_PRIORITY_CLASS
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "BELOW_NORMAL_PRIORITY_CLASS", BELOW_NORMAL_PRIORITY_CLASS
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "HIGH_PRIORITY_CLASS", HIGH_PRIORITY_CLASS
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "IDLE_PRIORITY_CLASS", IDLE_PRIORITY_CLASS
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "NORMAL_PRIORITY_CLASS", NORMAL_PRIORITY_CLASS
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "REALTIME_PRIORITY_CLASS", REALTIME_PRIORITY_CLASS
         ))
-        return NULL;
+        return -1;
 
     // connection status constants
     // http://msdn.microsoft.com/en-us/library/cc669305.aspx
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_CLOSED", MIB_TCP_STATE_CLOSED
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_CLOSING", MIB_TCP_STATE_CLOSING
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_CLOSE_WAIT", MIB_TCP_STATE_CLOSE_WAIT
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_LISTEN", MIB_TCP_STATE_LISTEN
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_ESTAB", MIB_TCP_STATE_ESTAB
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_SYN_SENT", MIB_TCP_STATE_SYN_SENT
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_SYN_RCVD", MIB_TCP_STATE_SYN_RCVD
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_FIN_WAIT1", MIB_TCP_STATE_FIN_WAIT1
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_FIN_WAIT2", MIB_TCP_STATE_FIN_WAIT2
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_LAST_ACK", MIB_TCP_STATE_LAST_ACK
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_TIME_WAIT", MIB_TCP_STATE_TIME_WAIT
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_TIME_WAIT", MIB_TCP_STATE_TIME_WAIT
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "MIB_TCP_STATE_DELETE_TCB", MIB_TCP_STATE_DELETE_TCB
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "PSUTIL_CONN_NONE", PSUTIL_CONN_NONE))
-        return NULL;
+        return -1;
 
     // ...for internal use in _psutil_windows.py
     if (PyModule_AddIntConstant(mod, "INFINITE", INFINITE))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "ERROR_ACCESS_DENIED", ERROR_ACCESS_DENIED
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "ERROR_INVALID_NAME", ERROR_INVALID_NAME))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "ERROR_SERVICE_DOES_NOT_EXIST", ERROR_SERVICE_DOES_NOT_EXIST
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(
             mod, "ERROR_PRIVILEGE_NOT_HELD", ERROR_PRIVILEGE_NOT_HELD
         ))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "WINVER", PSUTIL_WINVER))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "WINDOWS_VISTA", PSUTIL_WINDOWS_VISTA))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "WINDOWS_7", PSUTIL_WINDOWS_7))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "WINDOWS_8", PSUTIL_WINDOWS_8))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "WINDOWS_8_1", PSUTIL_WINDOWS_8_1))
-        return NULL;
+        return -1;
     if (PyModule_AddIntConstant(mod, "WINDOWS_10", PSUTIL_WINDOWS_10))
-        return NULL;
+        return -1;
 
-    return mod;
+    return 0;
+}
+
+static PyModuleDef_Slot _psutil_windows_slots[] = {
+    {Py_mod_exec, _psutil_windows_exec},
+// Declare that the module does not rely on the GIL, for free-threaded
+// builds. This is the multi-phase-init replacement for the unstable
+// PyUnstable_Module_SetGIL() call; the slot only exists on 3.13+.
+#ifdef Py_mod_gil
+    {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+#endif
+// Declare support for being loaded in multiple (shared-GIL) sub-interpreters.
+// Only exposed on Python >= 3.12 APIs; the stable-ABI wheel omits it, but
+// CPython already defaults multi-phase modules to this value.
+#ifdef Py_mod_multiple_interpreters
+    {Py_mod_multiple_interpreters, Py_MOD_MULTIPLE_INTERPRETERS_SUPPORTED},
+#endif
+    {0, NULL}
+};
+
+static struct PyModuleDef moduledef = {
+    .m_base = PyModuleDef_HEAD_INIT,
+    .m_name = "_psutil_windows",
+    .m_size = sizeof(struct module_state),
+    .m_methods = PsutilMethods,
+    .m_slots = _psutil_windows_slots,
+    .m_traverse = psutil_windows_traverse,
+    .m_clear = psutil_windows_clear,
+    .m_free = psutil_windows_free,
+};
+
+PyMODINIT_FUNC
+PyInit__psutil_windows(void) {
+    return PyModuleDef_Init(&moduledef);
 }

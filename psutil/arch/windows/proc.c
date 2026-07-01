@@ -26,11 +26,6 @@
 #include "../../arch/all/init.h"
 
 
-// Raised by Process.wait().
-PyObject *TimeoutExpired;
-PyObject *TimeoutAbandoned;
-
-
 // Return 1 if PID exists in the current process list, else 0.
 PyObject *
 psutil_pid_exists(PyObject *self, PyObject *args) {
@@ -118,16 +113,16 @@ psutil_proc_wait(PyObject *self, PyObject *args) {
         return NULL;
     }
     if (retVal == WAIT_TIMEOUT) {
-        PyErr_SetString(
-            TimeoutExpired, "WaitForSingleObject() returned WAIT_TIMEOUT"
+        psutil_raise_windows_exc(
+            "TimeoutExpired", "WaitForSingleObject() returned WAIT_TIMEOUT"
         );
         CloseHandle(hProcess);
         return NULL;
     }
     if (retVal == WAIT_ABANDONED) {
         psutil_debug("WaitForSingleObject() -> WAIT_ABANDONED");
-        PyErr_SetString(
-            TimeoutAbandoned, "WaitForSingleObject() returned WAIT_ABANDONED"
+        psutil_raise_windows_exc(
+            "TimeoutAbandoned", "WaitForSingleObject() returned WAIT_ABANDONED"
         );
         CloseHandle(hProcess);
         return NULL;

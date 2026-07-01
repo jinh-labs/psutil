@@ -4,7 +4,32 @@
  * found in the LICENSE file.
  */
 
-extern PyObject *ZombieProcessError;
+// Per-interpreter module state shared by all POSIX platform modules
+// (_psutil_linux, _psutil_bsd, _psutil_osx, _psutil_aix, _psutil_sunos).
+// Keeping the exception here (rather than as a process-global) means each
+// (sub)interpreter gets its own ZombieProcessError class object, which is
+// required for `except cext.ZombieProcessError` to work correctly across
+// interpreters.
+struct module_state {
+    PyObject *ZombieProcessError;
+};
+
+#define GETSTATE(mod) ((struct module_state *)PyModule_GetState(mod))
+
+// GC / deallocation hooks for the module state (m_traverse / m_clear /
+// m_free).
+int psutil_posix_traverse(PyObject *mod, visitproc visit, void *arg);
+int psutil_posix_clear(PyObject *mod);
+void psutil_posix_free(void *mod);
+
+// Records the platform module's fully-qualified name so that C helpers which
+// do not receive the module object (e.g. psutil_raise_for_pid) can still
+// resolve the *current interpreter's* module on demand. Call once from exec.
+void psutil_posix_set_module(PyObject *mod);
+
+// Raise the current interpreter's ZombieProcessError with the given message.
+// Never raises with a NULL type (falls back to RuntimeError).
+void psutil_set_zombie_error(const char *msg);
 
 // convert a timeval struct to a double
 #ifdef PSUTIL_SUNOS

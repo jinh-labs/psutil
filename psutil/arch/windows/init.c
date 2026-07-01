@@ -6,15 +6,65 @@
 
 #include <Python.h>
 #include <windows.h>
+#include <string.h>  // strncpy
 
 #include "../../arch/all/init.h"
 #include "ntextapi.h"
 
 
-// Needed to make these globally visible.
+// Needed to make these globally visible. These are written once at module
+// init and only read afterwards; sharing them across (sub)interpreters is
+// safe under the shared-GIL / Py_MOD_MULTIPLE_INTERPRETERS_SUPPORTED target.
 int PSUTIL_WINVER;
 SYSTEM_INFO PSUTIL_SYSTEM_INFO;
 CRITICAL_SECTION PSUTIL_CRITICAL_SECTION;
+
+
+// Fully-qualified module name (e.g. "psutil._psutil_windows"), recorded once
+// in exec; identical in every interpreter, so caching it process-wide is safe.
+// Raise helpers use it to find the module in the current interpreter's
+// sys.modules.
+static char psutil_module_name[128] = {0};
+
+
+void
+psutil_windows_set_module(PyObject *mod) {
+    const char *name = PyModule_GetName(mod);  // module's __name__
+
+    if (name == NULL) {
+        PyErr_Clear();
+        return;
+    }
+    strncpy(psutil_module_name, name, sizeof(psutil_module_name) - 1);
+    psutil_module_name[sizeof(psutil_module_name) - 1] = '\0';
+}
+
+
+// Resolve this interpreter's module from its own sys.modules (a plain dict
+// lookup: no import, no module re-execution) and raise the exception named
+// `attrname` from it. Uses PyImport_GetModuleDict() + PyDict_GetItemString(),
+// both stable-ABI. Falls back to RuntimeError so we never raise with a NULL
+// type.
+void
+psutil_raise_windows_exc(const char *attrname, const char *msg) {
+    PyObject *modules;
+    PyObject *mod = NULL;
+    PyObject *exc = NULL;
+
+    modules = PyImport_GetModuleDict();  // borrowed
+    if (psutil_module_name[0] != '\0' && modules != NULL)
+        mod = PyDict_GetItemString(modules, psutil_module_name);  // borrowed
+    if (mod != NULL)
+        exc = PyObject_GetAttrString(mod, attrname);  // new ref
+
+    if (exc == NULL) {
+        PyErr_Clear();
+        PyErr_SetString(PyExc_RuntimeError, (msg && *msg) ? msg : attrname);
+        return;
+    }
+    PyErr_SetString(exc, msg ? msg : "");
+    Py_DECREF(exc);
+}
 
 
 // ====================================================================

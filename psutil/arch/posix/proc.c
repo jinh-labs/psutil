@@ -41,7 +41,7 @@ psutil_raise_for_pid(pid_t pid, char *syscall) {
         psutil_oserror_nsp(syscall);
 #if defined(PSUTIL_OSX) || defined(PSUTIL_BSD)
     else if (is_zombie(pid))
-        PyErr_SetString(ZombieProcessError, "");
+        psutil_set_zombie_error("");
 #endif
     else
         psutil_runtime_error("%s syscall failed", syscall);

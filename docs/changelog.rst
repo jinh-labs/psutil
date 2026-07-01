@@ -117,6 +117,18 @@ Type hints / enums:
   The individual top-level constants (e.g. :data:`STATUS_RUNNING`) remain the
   primary API, and are now aliases for the corresponding enum members.
 
+C extensions:
+
+- :gh:`2576`, :gh:`2577`: the C extension modules now use PEP 489 multi-phase
+  initialization. As part of this they no longer keep mutable state (exception
+  classes) in process-global C variables, which makes them safe to load in
+  CPython 3.12+ *shared-GIL* sub-interpreters: each interpreter gets its own
+  ``ZombieProcessError`` (and, on Windows, ``TimeoutExpired`` /
+  ``TimeoutAbandoned``) class object. The free-threading GIL declaration also
+  moved from the unstable ``PyUnstable_Module_SetGIL()`` call to the stable
+  ``Py_mod_gil`` slot. (Per-interpreter GIL / free-threaded isolation is not
+  yet supported.)
+
 New APIs:
 
 - :gh:`2798`: new :attr:`Process.attrs` class attribute, a :class:`frozenset`

@@ -59,8 +59,16 @@ PVOID psutil_GetProcAddress(LPCSTR libname, LPCSTR procname);
 PVOID psutil_GetProcAddressFromLib(LPCSTR libname, LPCSTR procname);
 PVOID psutil_SetFromNTStatusErr(NTSTATUS status, const char *syscall);
 
-PyObject *TimeoutExpired;
-PyObject *TimeoutAbandoned;
+// Records the module's fully-qualified name so that raise helpers in the
+// arch/windows/*.c compilation units (which don't receive the module object)
+// can resolve the *current interpreter's* module on demand. Call once from
+// the module's exec function.
+void psutil_windows_set_module(PyObject *mod);
+
+// Raise the current interpreter's exception named `attrname` (e.g.
+// "TimeoutExpired" / "TimeoutAbandoned") with the given message. Never raises
+// with a NULL type (falls back to RuntimeError).
+void psutil_raise_windows_exc(const char *attrname, const char *msg);
 
 
 int _psutil_pids(DWORD **pids_array, int *pids_count);

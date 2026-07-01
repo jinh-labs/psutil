@@ -82,7 +82,7 @@ psutil_sysctl_procargs(pid_t pid, char *procargs, size_t *argmax) {
         }
 
         if (is_zombie(pid) == 1) {
-            PyErr_SetString(ZombieProcessError, "");
+            psutil_set_zombie_error("");
             return -1;
         }
 
@@ -164,9 +164,7 @@ psutil_task_for_pid(pid_t pid, mach_port_t *task) {
             psutil_oserror_nsp("task_for_pid");
         }
         else if (is_zombie(pid) == 1) {
-            PyErr_SetString(
-                ZombieProcessError, "task_for_pid -> psutil_is_zombie -> 1"
-            );
+            psutil_set_zombie_error("task_for_pid -> psutil_is_zombie -> 1");
         }
         else {
             psutil_debug(

@@ -10,6 +10,11 @@
 
 #include "init.h"
 
+// Process-global, shared by all sub-interpreters. PSUTIL_TESTING and
+// PSUTIL_CONN_NONE are set once at startup then only read, so sharing is
+// harmless. PSUTIL_DEBUG can change at runtime via set_debug(), but it's read
+// by deep helpers with no module handle, so per-interpreter state isn't worth
+// it for a debug flag -- set_debug() therefore affects all interpreters.
 int PSUTIL_DEBUG = 0;
 int PSUTIL_TESTING = 0;
 int PSUTIL_CONN_NONE = 128;

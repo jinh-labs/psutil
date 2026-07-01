@@ -109,6 +109,7 @@ Code contributors by year
 
 * `Amaan Qureshi`_ - :gh:`2770`
 * `Felix Yan`_ - :gh:`2732`
+* `Jinhyuk Hong`_ - :gh:`2855`
 * :user:`Kataoka Katsuki <kataokatsuki>` - :gh:`2854`
 * `Santhosh Raju`_ - :gh:`2805`
 * `Sergey Fedorov`_ - :gh:`2701`
@@ -513,6 +514,7 @@ Code contributors by year
 .. _`Jean-Luc Migot`: https://github.com/jmigot-tehtris
 .. _`Jeff Tang`: https://github.com/mrjefftang
 .. _`Jeremy Humble`: https://github.com/jhumble
+.. _`Jinhyuk Hong`: https://github.com/jinh-labs
 .. _`John Burnett`: https://github.com/johnburnett
 .. _`Jonathan Kohler`: https://github.com/kohlerjl
 .. _`Josiah Carlson`: https://github.com/josiahcarlson

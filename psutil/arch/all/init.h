@@ -7,6 +7,7 @@
 // Global names shared by all platforms.
 
 #include <Python.h>
+#include <stdio.h>  // fprintf(), stderr
 
 // We do this so that all .c files have to include only one header
 // (ourselves, init.h).

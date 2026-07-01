@@ -5,12 +5,83 @@
  */
 
 #include <Python.h>
+#include <string.h>  // strncpy
 #include <sys/resource.h>
 #include <sys/socket.h>
 
 #include "init.h"
 
-PyObject *ZombieProcessError = NULL;
+// Fully-qualified module name (e.g. "psutil._psutil_linux"), recorded once in
+// exec; identical in every interpreter, so caching it process-wide is safe.
+// Raise helpers use it to find the module in the current interpreter's
+// sys.modules. (PyState_FindModule() can't be used: it rejects multi-phase
+// modules.)
+static char psutil_module_name[128] = {0};
+
+
+int
+psutil_posix_traverse(PyObject *mod, visitproc visit, void *arg) {
+    Py_VISIT(GETSTATE(mod)->ZombieProcessError);
+    return 0;
+}
+
+
+int
+psutil_posix_clear(PyObject *mod) {
+    Py_CLEAR(GETSTATE(mod)->ZombieProcessError);
+    return 0;
+}
+
+
+// m_free hook. The module is freed either by the cyclic GC (which calls
+// m_clear) or by plain reference counting (which calls m_free directly, with
+// no m_clear). m_free calls m_clear so the module-state reference is released
+// either way.
+void
+psutil_posix_free(void *mod) {
+    psutil_posix_clear((PyObject *)mod);
+}
+
+
+void
+psutil_posix_set_module(PyObject *mod) {
+    const char *name = PyModule_GetName(mod);  // module's __name__
+
+    if (name == NULL) {
+        PyErr_Clear();
+        return;
+    }
+    strncpy(psutil_module_name, name, sizeof(psutil_module_name) - 1);
+    psutil_module_name[sizeof(psutil_module_name) - 1] = '\0';
+}
+
+
+// Resolve this interpreter's module from its own sys.modules (a plain dict
+// lookup: no import, no module re-execution) and raise its ZombieProcessError.
+// Uses PyImport_GetModuleDict() + PyDict_GetItemString(), both stable-ABI.
+// Falls back to RuntimeError so we never raise with a NULL type.
+void
+psutil_set_zombie_error(const char *msg) {
+    PyObject *modules;
+    PyObject *mod = NULL;
+    PyObject *exc = NULL;
+
+    modules = PyImport_GetModuleDict();  // borrowed
+    if (psutil_module_name[0] != '\0' && modules != NULL)
+        mod = PyDict_GetItemString(modules, psutil_module_name);  // borrowed
+    if (mod != NULL)
+        exc = PyObject_GetAttrString(mod, "ZombieProcessError");  // new ref
+
+    if (exc == NULL) {
+        PyErr_Clear();
+        PyErr_SetString(
+            PyExc_RuntimeError, (msg && *msg) ? msg : "process is a zombie"
+        );
+        return;
+    }
+    PyErr_SetString(exc, msg ? msg : "");
+    Py_DECREF(exc);
+}
 
 // "man getpagesize" says:
 //
@@ -78,14 +149,23 @@ psutil_posix_add_methods(PyObject *mod) {
         }
     }
 
-    // custom exception
-    ZombieProcessError = PyErr_NewException(
+    // Custom exception, created per module (hence per interpreter). We keep
+    // an owned reference in the module state so it is tracked by the module's
+    // GC hooks (traverse/clear), and expose it as a module attribute. Both
+    // Python (`except cext.ZombieProcessError`) and C helpers
+    // (psutil_set_zombie_error) look it up through that attribute.
+    PyObject *exc = PyErr_NewException(
         "_psutil_posix.ZombieProcessError", NULL, NULL
     );
-    if (ZombieProcessError == NULL)
+    if (exc == NULL)
         return -1;
-    if (PyModule_AddObject(mod, "ZombieProcessError", ZombieProcessError))
+    Py_INCREF(exc);
+    GETSTATE(mod)->ZombieProcessError = exc;
+    // PyModule_AddObject steals a reference on success only.
+    if (PyModule_AddObject(mod, "ZombieProcessError", exc) < 0) {
+        Py_DECREF(exc);  // undo the reference PyModule_AddObject didn't take
         return -1;
+    }
 
     return 0;
 }
